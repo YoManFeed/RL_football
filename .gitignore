@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Test / coverage / tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE / editor
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Local config / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Artifacts
+*.zip
+*.tar.gz
+
+# Pygame / runtime captures
+screenshots/
+recordings/
+
+checkpoints/
+runs/
+wandb/
+tensorboard/
+*.pt
+*.pth
+*.onnx
+*.mp4
+*.gif

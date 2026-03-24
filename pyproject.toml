@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "football-rl"
+version = "0.1.0"
+description = "Deterministic 2D football RL environment with Gymnasium and multi-agent wrappers"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{name = "OpenAI"}]
+dependencies = [
+  "numpy>=1.24",
+  "gymnasium>=0.29",
+  "pygame>=2.5",
+  "pytest>=8.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["football_rl*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
