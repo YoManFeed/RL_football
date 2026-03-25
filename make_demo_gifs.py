@@ -2,9 +2,9 @@
 
 Produces:
   gifs/stage_random.gif     — untrained (random) agent
-  gifs/stage_100k.gif       — after 100 000 env steps
-  gifs/stage_350k.gif       — after 350 000 env steps
-  gifs/stage_700k.gif       — after 700 000 env steps
+  gifs/stage_50k.gif        — after  50 000 env steps
+  gifs/stage_150k.gif       — after 150 000 env steps
+  gifs/stage_300k.gif       — after 300 000 env steps
   gifs/learning_curve.png   — episode return vs env steps
 """
 
@@ -32,7 +32,7 @@ from football_rl.training.ppo import PPOAgent, PPOConfig
 # ── training config ───────────────────────────────────────────────────────────
 
 SCENARIO      = "scenario_1_single_striker"
-TOTAL_STEPS   = 700_000
+TOTAL_STEPS   = 300_000
 ROLLOUT_STEPS = 2048
 GIF_FPS       = 18
 GIF_W, GIF_H  = 480, 320
@@ -42,9 +42,9 @@ CKPT_DIR      = Path("checkpoints")
 # (milestone_step → label)
 CAPTURE_AT = {
     0:       "random",
-    100_000: "100k",
-    350_000: "350k",
-    700_000: "700k",
+    50_000:  "50k",
+    150_000: "150k",
+    300_000: "300k",
 }
 
 
@@ -53,13 +53,11 @@ CAPTURE_AT = {
 def make_training_config():
     """Custom config with amplified dense rewards so PPO gets a useful signal."""
     cfg = make_default_config()
-    # ball_progress default scale is 0.04/120 ≈ 0.00033 per unit → increase 50×
-    cfg.rewards.ball_progress_scale = 2.0
-    # touch reward: default 0.05 → 10×
-    cfg.rewards.touch_reward = 0.5
-    # goal reward stays at 5.0
-    # kick-only: ball never sticks to player, agent must kick
-    cfg.ball.allow_dribble = False
+    cfg.rewards.ball_progress_scale = 2.0   # default 0.04 → ×50
+    cfg.rewards.touch_reward = 0.5          # default 0.05 → ×10
+    cfg.ball.allow_dribble = False          # kick-only
+    # fix attack direction for stage-1: removes canonical/action mismatch (×3 speedup)
+    cfg.randomization.randomize_attack_direction = False
     return cfg
 
 
@@ -74,7 +72,7 @@ class BallApproachWrapper:
         => actual_rel_x = obs[15] * 60,  actual_rel_y = obs[16] * 40
     """
 
-    APPROACH_SCALE = 0.4   # reward per unit of progress toward ball (normalised)
+    APPROACH_SCALE = 3.0   # reward per unit of progress toward ball (was 0.4)
 
     def __init__(self, env):
         self.env = env
@@ -125,6 +123,7 @@ def make_train_env():
 def make_render_env():
     cfg = make_default_config()
     cfg.ball.allow_dribble = False
+    cfg.randomization.randomize_attack_direction = False
     return FootballGymEnv(
         SCENARIO,
         config=cfg,

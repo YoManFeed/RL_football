@@ -45,8 +45,9 @@ class ActorCriticNet(nn.Module):
         )
         self.policy_head = nn.Linear(hidden_dim, action_dim)
         self.value_head = nn.Linear(hidden_dim, 1)
-        # Learnable log std, independent of the observation
-        self.log_std = nn.Parameter(torch.zeros(action_dim))
+        # Learnable log std, independent of the observation.
+        # Init at -0.5 (std≈0.6) for more directed early exploration.
+        self.log_std = nn.Parameter(torch.full((action_dim,), -0.5))
 
         self._init_weights()
 
