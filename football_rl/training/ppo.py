@@ -72,16 +72,56 @@ class ActorCriticNet(nn.Module):
         latent = self.encoder(obs)
         return self.value_head(latent).squeeze(-1)
 
-    def get_action_and_value(
-        self, obs: torch.Tensor, action: torch.Tensor | None = None
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    # def get_action_and_value(
+    #     self, obs: torch.Tensor, action: torch.Tensor | None = None
+    # ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    #     mean, std, value = self.forward(obs)
+    #     dist = Normal(mean, std)
+    #     if action is None:
+    #         action = dist.sample()
+    #     log_prob = dist.log_prob(action).sum(-1)
+    #     entropy = dist.entropy().sum(-1)
+    #     return action, log_prob, entropy, value
+
+    # def get_action_and_value(self, obs, action=None):
+    #     mean, std, value = self.forward(obs)
+    #     dist = Normal(mean, std)
+
+    #     if action is None:
+    #         raw_action = dist.rsample()
+    #         action = torch.tanh(raw_action)
+    #     else:
+    #         # inverse tanh (approx)
+    #         raw_action = torch.atanh(action.clamp(-0.999, 0.999))
+
+    #     log_prob = dist.log_prob(raw_action).sum(-1)
+    #     log_prob -= torch.log(1 - action.pow(2) + 1e-6).sum(-1)
+
+    #     entropy = dist.entropy().sum(-1)
+
+    #     return action, log_prob, entropy, value
+    def get_action_and_value(self, obs, action=None):
         mean, std, value = self.forward(obs)
         dist = Normal(mean, std)
+
         if action is None:
-            action = dist.sample()
-        log_prob = dist.log_prob(action).sum(-1)
+            raw_action = dist.rsample()
+            move_kick = torch.tanh(raw_action[..., :4])      # [-1, 1]
+            power_sprint = torch.sigmoid(raw_action[..., 4:])  # [0, 1]
+            action = torch.cat([move_kick, power_sprint], dim=-1)
+        else:
+            a = action.clamp(1e-6, 1 - 1e-6)
+            raw_move_kick = torch.atanh(action[..., :4].clamp(-0.999, 0.999))
+            raw_power_sprint = torch.log(a[..., 4:] / (1 - a[..., 4:]))
+            raw_action = torch.cat([raw_move_kick, raw_power_sprint], dim=-1)
+
+        log_prob = dist.log_prob(raw_action).sum(-1)
+        log_prob -= torch.log(1 - action[..., :4].pow(2) + 1e-6).sum(-1)
+        log_prob -= torch.log(action[..., 4:] * (1 - action[..., 4:]) + 1e-6).sum(-1)
+
         entropy = dist.entropy().sum(-1)
         return action, log_prob, entropy, value
+
 
 
 # ---------------------------------------------------------------------------
@@ -136,11 +176,21 @@ class RolloutBuffer:
         T = self.ptr
         advantages = np.zeros(T, dtype=np.float32)
         gae = 0.0
+        # for t in reversed(range(T)):
+        #     next_val = last_value if t == T - 1 else self.values[t + 1]
+        #     next_done = 0.0 if t == T - 1 else self.dones[t + 1]
+        #     delta = self.rewards[t] + gamma * next_val * (1.0 - self.dones[t]) - self.values[t]
+        #     gae = delta + gamma * lam * (1.0 - self.dones[t]) * gae
         for t in reversed(range(T)):
-            next_val = last_value if t == T - 1 else self.values[t + 1]
-            next_done = 0.0 if t == T - 1 else self.dones[t + 1]
-            delta = self.rewards[t] + gamma * next_val * (1.0 - self.dones[t]) - self.values[t]
-            gae = delta + gamma * lam * (1.0 - self.dones[t]) * gae
+            if t == T - 1:
+                next_nonterminal = 1.0 - self.dones[t]
+                next_value = last_value
+            else:
+                next_nonterminal = 1.0 - self.dones[t + 1]
+                next_value = self.values[t + 1]
+
+            delta = self.rewards[t] + gamma * next_value * next_nonterminal - self.values[t]
+            gae = delta + gamma * lam * next_nonterminal * gae
             advantages[t] = gae
         returns = advantages + self.values[:T]
 
@@ -168,7 +218,7 @@ class PPOConfig:
     gae_lambda: float       = 0.95
     clip_epsilon: float     = 0.2
     value_coef: float       = 0.5
-    entropy_coef: float     = 0.01
+    entropy_coef: float     = 0.001
     max_grad_norm: float    = 0.5
     lr: float               = 3e-4
     normalize_advantages: bool = True
@@ -242,6 +292,10 @@ class PPOAgent:
             "mean_ep_length": np.mean(ep_lengths) if ep_lengths else float("nan"),
             "num_episodes": len(ep_returns),
         }
+
+        print("rewards sample:", self.buffer.rewards[:50])
+
+        
         return last_value, stats
 
     # ------------------------------------------------------------------

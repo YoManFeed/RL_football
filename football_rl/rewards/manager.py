@@ -10,6 +10,7 @@ from football_rl.rewards.terms import (
     PassRewardTerm,
     ScenarioHookRewardTerm,
     StealRewardTerm,
+    TimePenaltyTerm
 )
 
 
@@ -35,5 +36,6 @@ def build_default_reward_manager() -> RewardManager:
             StealRewardTerm(),
             IdlePenaltyTerm(),
             ScenarioHookRewardTerm(),
+            TimePenaltyTerm(),
         ]
     )

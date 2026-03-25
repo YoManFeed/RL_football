@@ -57,16 +57,16 @@ class ObservationConfig:
 
 @dataclass(slots=True)
 class RewardConfig:
-    goal_reward: float = 5.0
+    goal_reward: float = 50.0
     concede_penalty: float = 5.0
-    ball_progress_scale: float = 0.04
+    ball_progress_scale: float = 0.05  # increased from 0.04 for better learning signal
     pass_reward: float = 0.45
     receive_pass_reward: float = 0.25
     steal_reward: float = 0.6
     interception_reward: float = 0.45
-    touch_reward: float = 0.05
+    touch_reward: float = 0.1  # increased from 0.05 for better learning signal
     idle_penalty: float = 0.004
-    scenario_bonus_scale: float = 1.0
+    scenario_bonus_scale: float = 0.0
 
 
 @dataclass(slots=True)

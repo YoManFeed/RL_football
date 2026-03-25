@@ -13,12 +13,48 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 # Make sure the package is importable when running from this directory
 sys.path.insert(0, str(Path(__file__).parent))
 
 from football_rl.wrappers.gym_env import FootballGymEnv
 from football_rl.training.ppo import PPOAgent, PPOConfig
+from football_rl.configs.defaults import make_default_config
+
+
+def make_training_config():
+    """Training config that forces kick-only behavior."""
+    cfg = make_default_config()
+    cfg.ball.allow_dribble = False          # kick-only, no dragging
+    # fix attack direction for stage-1: removes canonical/action mismatch (×3 speedup)
+    cfg.randomization.randomize_attack_direction = False
+    return cfg
+
+
+def save_learning_curve(steps_log: list[int], return_log: list[float], path: Path) -> None:
+    """Plot and save learning curve."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    arr = np.array(return_log, dtype=float)
+    w = min(30, max(1, len(arr)))
+    smooth = np.convolve(arr, np.ones(w) / w, mode="valid")
+    sx = steps_log[w - 1:]
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.plot(steps_log, return_log, alpha=0.2, color="steelblue", linewidth=0.8, label="episode return")
+    ax.plot(sx, smooth, color="steelblue", linewidth=2.0, label=f"rolling mean ({w} ep)")
+
+    ax.set_xlabel("Env steps", fontsize=11)
+    ax.set_ylabel("Episode return", fontsize=11)
+    ax.set_title("PPO Training Progress", fontsize=12)
+    ax.legend(fontsize=9)
+    ax.grid(alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(str(path), dpi=140)
+    plt.close(fig)
+    print(f"  saved  {path.name}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -29,7 +65,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--hidden_dim", type=int, default=128)
     p.add_argument("--lr", type=float, default=3e-4)
     p.add_argument("--clip", type=float, default=0.2)
-    p.add_argument("--entropy_coef", type=float, default=0.01)
+    p.add_argument("--entropy_coef", type=float, default=0.001)
     p.add_argument("--num_epochs", type=int, default=4)
     p.add_argument("--minibatch_size", type=int, default=512)
     p.add_argument("--load", type=str, default=None, help="Path to checkpoint to resume from")
@@ -37,6 +73,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--log_interval", type=int, default=10, help="Log every N updates")
     p.add_argument("--save_interval", type=int, default=50, help="Save checkpoint every N updates")
     p.add_argument("--device", default="cpu")
+    p.add_argument("--plot_dir", default="plots", help="Directory to save learning curve plot")
     return p.parse_args()
 
 
@@ -44,10 +81,13 @@ def main() -> None:
     args = parse_args()
     save_dir = Path(args.save_dir)
     save_dir.mkdir(exist_ok=True)
+    plot_dir = Path(args.plot_dir)
+    plot_dir.mkdir(exist_ok=True)
 
     # Environment
     env = FootballGymEnv(
         scenario_name=args.scenario,
+        config=make_training_config(),
         flatten_observation=True,
         canonical_observation=True,
     )
@@ -87,6 +127,7 @@ def main() -> None:
           f"= {num_updates * args.rollout_steps:,} env steps\n")
 
     all_returns: list[float] = []
+    steps_log: list[int] = []
 
     for _ in range(num_updates):
         last_value, rollout_stats = agent.collect_rollout(env)
@@ -97,6 +138,7 @@ def main() -> None:
 
         if rollout_stats["num_episodes"] > 0:
             all_returns.append(rollout_stats["mean_ep_return"])
+            steps_log.append(total_env_steps)
 
         if update_idx % args.log_interval == 0:
             recent = np.mean(all_returns[-20:]) if all_returns else float("nan")
@@ -119,6 +161,11 @@ def main() -> None:
     final_path = save_dir / f"ppo_{args.scenario}_final.pt"
     agent.save(final_path)
     print(f"\nTraining done. Final checkpoint: {final_path}")
+    
+    # Save learning curve
+    plot_path = plot_dir / f"learning_curve_{args.scenario}.png"
+    save_learning_curve(steps_log, all_returns, plot_path)
+    
     env.close()
 
 

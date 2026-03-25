@@ -41,6 +41,12 @@ class PygameRenderer:
         goal_bottom = int((self.config.physics.field_height / 2 + self.config.physics.goal_width / 2) * self._scale_y)
         pygame.draw.line(self._screen, (255, 255, 255), (0, goal_top), (0, goal_bottom), width=6)
         pygame.draw.line(self._screen, (255, 255, 255), (self._window_size[0] - 1, goal_top), (self._window_size[0] - 1, goal_bottom), width=6)
+        # Add horizontal goal boundaries extending inward
+        goal_depth = int(4 * self._scale_x)  # Extend 4 units inward
+        pygame.draw.line(self._screen, (255, 255, 255), (0, goal_top), (goal_depth, goal_top), width=4)
+        pygame.draw.line(self._screen, (255, 255, 255), (0, goal_bottom), (goal_depth, goal_bottom), width=4)
+        pygame.draw.line(self._screen, (255, 255, 255), (self._window_size[0] - goal_depth, goal_top), (self._window_size[0] - 1, goal_top), width=4)
+        pygame.draw.line(self._screen, (255, 255, 255), (self._window_size[0] - goal_depth, goal_bottom), (self._window_size[0] - 1, goal_bottom), width=4)
         for obstacle in simulator.obstacles:
             px, py = self._to_screen(obstacle.position)
             hw = int(obstacle.half_extents[0] * self._scale_x)

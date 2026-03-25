@@ -1,4 +1,5 @@
 from __future__ import annotations
+import numpy as np
 
 from football_rl.core.events import EventType
 from football_rl.rewards.base import RewardTerm
@@ -18,15 +19,43 @@ class GoalRewardTerm(RewardTerm):
         return rewards
 
 
+# class BallProgressRewardTerm(RewardTerm):
+#     def compute(self, simulator) -> dict[str, float]:
+#         rewards = {agent_id: 0.0 for agent_id in simulator.players}
+#         prev_x = simulator.prev_ball_position[0]
+#         curr_x = simulator.ball.position[0]
+#         delta = curr_x - prev_x
+#         scale = simulator.config.rewards.ball_progress_scale / simulator.config.physics.field_width
+#         for agent_id, player in simulator.players.items():
+#             rewards[agent_id] += float(delta * player.attack_direction * scale)
+#         return rewards
+
 class BallProgressRewardTerm(RewardTerm):
     def compute(self, simulator) -> dict[str, float]:
         rewards = {agent_id: 0.0 for agent_id in simulator.players}
-        prev_x = simulator.prev_ball_position[0]
-        curr_x = simulator.ball.position[0]
-        delta = curr_x - prev_x
-        scale = simulator.config.rewards.ball_progress_scale / simulator.config.physics.field_width
+
+        prev_pos = np.array(simulator.prev_ball_position)
+        curr_pos = np.array(simulator.ball.position)
+
+        # define goal center (you may need to adjust depending on your coordinate system)
+        goal_x = simulator.config.physics.field_width / 2.0
+        goal_y = 0.0  # assuming center of field in y
+
+        # If attack direction matters:
         for agent_id, player in simulator.players.items():
-            rewards[agent_id] += float(delta * player.attack_direction * scale)
+            if player.attack_direction == -1:
+                goal_x = -goal_x  # flip goal for opposite team
+
+            goal_pos = np.array([goal_x, goal_y])
+
+            prev_dist = np.linalg.norm(prev_pos - goal_pos)
+            curr_dist = np.linalg.norm(curr_pos - goal_pos)
+
+            delta = prev_dist - curr_dist  # positive if closer to goal
+
+            scale = simulator.config.rewards.ball_progress_scale
+            rewards[agent_id] += float(delta * scale)
+
         return rewards
 
 
@@ -73,3 +102,7 @@ class ScenarioHookRewardTerm(RewardTerm):
         for agent_id, value in simulator.extra_agent_rewards.items():
             rewards[agent_id] += value * simulator.config.rewards.scenario_bonus_scale
         return rewards
+    
+class TimePenaltyTerm(RewardTerm):
+    def compute(self, simulator) -> dict[str, float]:
+        return {agent_id: -0.001 for agent_id in simulator.players}
