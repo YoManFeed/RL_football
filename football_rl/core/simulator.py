@@ -211,7 +211,7 @@ class SoccerSimulator:
                 self.pending_pass = None
             elif prev_owner is not None and self.players[prev_owner].team_id != owner.team_id:
                 self._record(EventType.STEAL, player_id=owner.entity_id, team_id=owner.team_id)
-        if self.ball.owner_id is not None:
+        if self.ball.owner_id is not None and self.config.ball.allow_dribble:
             player = self.players[self.ball.owner_id]
             offset = self.ball.position - player.position
             if l2norm(offset) < 1e-6:

@@ -44,6 +44,7 @@ class BallConfig:
     launch_from_player_velocity_scale: float = 0.2
     dribble_velocity_scale: float = 0.62
     dribble_follow_distance: float = 0.8
+    allow_dribble: bool = True  # False = kick-only, ball never sticks to player
 
 
 @dataclass(slots=True)
