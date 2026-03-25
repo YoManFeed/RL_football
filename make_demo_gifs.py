@@ -58,6 +58,8 @@ def make_training_config():
     # touch reward: default 0.05 → 10×
     cfg.rewards.touch_reward = 0.5
     # goal reward stays at 5.0
+    # kick-only: ball never sticks to player, agent must kick
+    cfg.ball.allow_dribble = False
     return cfg
 
 
@@ -121,9 +123,11 @@ def make_train_env():
 
 
 def make_render_env():
-    # Render env: uses default rewards so GIF return values are realistic
+    cfg = make_default_config()
+    cfg.ball.allow_dribble = False
     return FootballGymEnv(
         SCENARIO,
+        config=cfg,
         flatten_observation=True,
         canonical_observation=True,
         render_mode="rgb_array",
