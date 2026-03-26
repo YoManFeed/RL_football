@@ -72,56 +72,16 @@ class ActorCriticNet(nn.Module):
         latent = self.encoder(obs)
         return self.value_head(latent).squeeze(-1)
 
-    # def get_action_and_value(
-    #     self, obs: torch.Tensor, action: torch.Tensor | None = None
-    # ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    #     mean, std, value = self.forward(obs)
-    #     dist = Normal(mean, std)
-    #     if action is None:
-    #         action = dist.sample()
-    #     log_prob = dist.log_prob(action).sum(-1)
-    #     entropy = dist.entropy().sum(-1)
-    #     return action, log_prob, entropy, value
-
-    # def get_action_and_value(self, obs, action=None):
-    #     mean, std, value = self.forward(obs)
-    #     dist = Normal(mean, std)
-
-    #     if action is None:
-    #         raw_action = dist.rsample()
-    #         action = torch.tanh(raw_action)
-    #     else:
-    #         # inverse tanh (approx)
-    #         raw_action = torch.atanh(action.clamp(-0.999, 0.999))
-
-    #     log_prob = dist.log_prob(raw_action).sum(-1)
-    #     log_prob -= torch.log(1 - action.pow(2) + 1e-6).sum(-1)
-
-    #     entropy = dist.entropy().sum(-1)
-
-    #     return action, log_prob, entropy, value
-    def get_action_and_value(self, obs, action=None):
+    def get_action_and_value(
+        self, obs: torch.Tensor, action: torch.Tensor | None = None
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         mean, std, value = self.forward(obs)
         dist = Normal(mean, std)
-
         if action is None:
-            raw_action = dist.rsample()
-            move_kick = torch.tanh(raw_action[..., :4])      # [-1, 1]
-            power_sprint = torch.sigmoid(raw_action[..., 4:])  # [0, 1]
-            action = torch.cat([move_kick, power_sprint], dim=-1)
-        else:
-            a = action.clamp(1e-6, 1 - 1e-6)
-            raw_move_kick = torch.atanh(action[..., :4].clamp(-0.999, 0.999))
-            raw_power_sprint = torch.log(a[..., 4:] / (1 - a[..., 4:]))
-            raw_action = torch.cat([raw_move_kick, raw_power_sprint], dim=-1)
-
-        log_prob = dist.log_prob(raw_action).sum(-1)
-        log_prob -= torch.log(1 - action[..., :4].pow(2) + 1e-6).sum(-1)
-        log_prob -= torch.log(action[..., 4:] * (1 - action[..., 4:]) + 1e-6).sum(-1)
-
+            action = dist.sample()
+        log_prob = dist.log_prob(action).sum(-1)
         entropy = dist.entropy().sum(-1)
         return action, log_prob, entropy, value
-
 
 
 # ---------------------------------------------------------------------------
@@ -176,21 +136,11 @@ class RolloutBuffer:
         T = self.ptr
         advantages = np.zeros(T, dtype=np.float32)
         gae = 0.0
-        # for t in reversed(range(T)):
-        #     next_val = last_value if t == T - 1 else self.values[t + 1]
-        #     next_done = 0.0 if t == T - 1 else self.dones[t + 1]
-        #     delta = self.rewards[t] + gamma * next_val * (1.0 - self.dones[t]) - self.values[t]
-        #     gae = delta + gamma * lam * (1.0 - self.dones[t]) * gae
         for t in reversed(range(T)):
-            if t == T - 1:
-                next_nonterminal = 1.0 - self.dones[t]
-                next_value = last_value
-            else:
-                next_nonterminal = 1.0 - self.dones[t + 1]
-                next_value = self.values[t + 1]
-
-            delta = self.rewards[t] + gamma * next_value * next_nonterminal - self.values[t]
-            gae = delta + gamma * lam * next_nonterminal * gae
+            next_val = last_value if t == T - 1 else self.values[t + 1]
+            next_done = 0.0 if t == T - 1 else self.dones[t + 1]
+            delta = self.rewards[t] + gamma * next_val * (1.0 - self.dones[t]) - self.values[t]
+            gae = delta + gamma * lam * (1.0 - self.dones[t]) * gae
             advantages[t] = gae
         returns = advantages + self.values[:T]
 
@@ -218,7 +168,7 @@ class PPOConfig:
     gae_lambda: float       = 0.95
     clip_epsilon: float     = 0.2
     value_coef: float       = 0.5
-    entropy_coef: float     = 0.001
+    entropy_coef: float     = 0.01
     max_grad_norm: float    = 0.5
     lr: float               = 3e-4
     normalize_advantages: bool = True
@@ -258,22 +208,37 @@ class PPOAgent:
     # Rollout collection
     # ------------------------------------------------------------------
 
-    def collect_rollout(self, env) -> dict:
+    def collect_rollout(self, env) -> tuple[float, dict]:
         """Fill the rollout buffer with `rollout_steps` environment transitions."""
         self.buffer.reset()
         obs, _ = env.reset()
         ep_returns, ep_lengths = [], []
         ep_ret, ep_len = 0.0, 0
 
+        event_counts: dict[str, int] = {}
+        reward_term_totals: dict[str, float] = {}
+
         for _ in range(self.cfg.rollout_steps):
             action, log_prob, value = self.select_action(obs)
-            next_obs, reward, terminated, truncated, _ = env.step(action)
+            next_obs, reward, terminated, truncated, info = env.step(action)
             done = float(terminated or truncated)
 
             self.buffer.add(obs, action, log_prob, reward, done, value)
 
             ep_ret += reward
             ep_len += 1
+
+            # Accumulate event counts
+            for evt in info.get("events", []):
+                event_counts[evt] = event_counts.get(evt, 0) + 1
+
+            # Accumulate per-term reward breakdown
+            breakdown = info.get("reward_breakdown", {})
+            controlled = info.get("controlled_agent_id", "")
+            for term_name, agent_rewards in breakdown.items():
+                val = agent_rewards.get(controlled, 0.0)
+                reward_term_totals[term_name] = reward_term_totals.get(term_name, 0.0) + val
+
             obs = next_obs
 
             if terminated or truncated:
@@ -291,11 +256,9 @@ class PPOAgent:
             "mean_ep_return": np.mean(ep_returns) if ep_returns else float("nan"),
             "mean_ep_length": np.mean(ep_lengths) if ep_lengths else float("nan"),
             "num_episodes": len(ep_returns),
+            "event_counts": event_counts,
+            "reward_term_totals": reward_term_totals,
         }
-
-        print("rewards sample:", self.buffer.rewards[:50])
-
-        
         return last_value, stats
 
     # ------------------------------------------------------------------
@@ -305,9 +268,23 @@ class PPOAgent:
     def update(self, last_value: float) -> dict:
         batch = self.buffer.compute_gae(last_value, self.cfg.gamma, self.cfg.gae_lambda)
 
+        # Explained variance
+        with torch.no_grad():
+            var_returns = torch.var(batch.returns)
+            explained_var = (1.0 - torch.var(batch.returns - batch.values) / (var_returns + 1e-8)).item()
+
+        # Advantage statistics (before normalization)
+        adv_mean = batch.advantages.mean().item()
+        adv_std = batch.advantages.std().item()
+
+        # Action statistics from the rollout
+        action_mean = batch.actions.mean(dim=0).cpu().numpy()
+        action_std = batch.actions.std(dim=0).cpu().numpy()
+
         T = batch.obs.shape[0]
         indices = np.arange(T)
         pg_losses, v_losses, ent_bonuses, clip_fracs = [], [], [], []
+        kl_values, grad_norms = [], []
 
         for _ in range(self.cfg.num_epochs):
             np.random.shuffle(indices)
@@ -345,21 +322,41 @@ class PPOAgent:
 
                 self.optimizer.zero_grad()
                 loss.backward()
+
+                # Gradient norm before clipping
+                grad_norm = sum(
+                    p.grad.data.norm(2).item() ** 2
+                    for p in self.net.parameters() if p.grad is not None
+                ) ** 0.5
+                grad_norms.append(grad_norm)
+
                 nn.utils.clip_grad_norm_(self.net.parameters(), self.cfg.max_grad_norm)
                 self.optimizer.step()
 
                 with torch.no_grad():
                     clip_frac = ((ratio - 1).abs() > self.cfg.clip_epsilon).float().mean().item()
                     clip_fracs.append(clip_frac)
+                    approx_kl = (mb_old_lp - new_log_prob).mean().item()
+                    kl_values.append(approx_kl)
                 pg_losses.append(pg_loss.item())
                 v_losses.append(v_loss.item())
                 ent_bonuses.append(ent_loss.item())
+
+        policy_std = self.net.log_std.exp().detach().cpu().numpy()
 
         return {
             "pg_loss": np.mean(pg_losses),
             "v_loss": np.mean(v_losses),
             "entropy": np.mean(ent_bonuses),
             "clip_frac": np.mean(clip_fracs),
+            "approx_kl": np.mean(kl_values),
+            "explained_var": explained_var,
+            "grad_norm": np.mean(grad_norms),
+            "adv_mean": adv_mean,
+            "adv_std": adv_std,
+            "action_mean": action_mean,
+            "action_std": action_std,
+            "policy_std": policy_std,
         }
 
     # ------------------------------------------------------------------
