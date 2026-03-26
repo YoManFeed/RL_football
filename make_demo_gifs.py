@@ -31,7 +31,7 @@ from football_rl.training.ppo import PPOAgent, PPOConfig
 
 # ── training config ───────────────────────────────────────────────────────────
 
-SCENARIO      = "scenario_1_single_striker"
+SCENARIO      = "scenario_2_moving_wall"
 TOTAL_STEPS   = 300_000
 ROLLOUT_STEPS = 2048
 GIF_FPS       = 18

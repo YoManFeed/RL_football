@@ -59,3 +59,5 @@ tensorboard/
 *.onnx
 *.mp4
 *.gif
+!gifs/*.gif
+!gifs/*.png
