@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import numpy as np
 
 from football_rl.core.events import EventType
@@ -19,30 +20,27 @@ class GoalRewardTerm(RewardTerm):
         return rewards
 
 
-# class BallProgressRewardTerm(RewardTerm):
-#     def compute(self, simulator) -> dict[str, float]:
-#         rewards = {agent_id: 0.0 for agent_id in simulator.players}
-#         prev_x = simulator.prev_ball_position[0]
-#         curr_x = simulator.ball.position[0]
-#         delta = curr_x - prev_x
-#         scale = simulator.config.rewards.ball_progress_scale / simulator.config.physics.field_width
-#         for agent_id, player in simulator.players.items():
-#             rewards[agent_id] += float(delta * player.attack_direction * scale)
-#         return rewards
-
 class BallProgressRewardTerm(RewardTerm):
     def compute(self, simulator) -> dict[str, float]:
         rewards = {agent_id: 0.0 for agent_id in simulator.players}
+        scale = simulator.config.rewards.ball_progress_scale
 
-        prev_pos = np.array(simulator.prev_ball_position)
-        curr_pos = np.array(simulator.ball.position)
-
-        for agent_id, player in simulator.players.items():
-            goal_pos = simulator.opponent_goal_center(player.team_id)
-            prev_dist = float(np.linalg.norm(prev_pos - goal_pos))
-            curr_dist = float(np.linalg.norm(curr_pos - goal_pos))
-            delta = prev_dist - curr_dist  # positive if ball moved closer to goal
-            rewards[agent_id] += delta * simulator.config.rewards.ball_progress_scale
+        if simulator.config.rewards.ball_progress_euclidean:
+            fw = simulator.config.physics.field_width
+            fh = simulator.config.physics.field_height
+            max_dist = float(np.sqrt(fw ** 2 + fh ** 2))
+            for agent_id, player in simulator.players.items():
+                goal = simulator.opponent_goal_center(player.team_id)
+                prev_dist = float(np.linalg.norm(simulator.prev_ball_position - goal))
+                curr_dist = float(np.linalg.norm(simulator.ball.position - goal))
+                rewards[agent_id] += (prev_dist - curr_dist) * scale / max_dist
+        else:
+            prev_x = simulator.prev_ball_position[0]
+            curr_x = simulator.ball.position[0]
+            delta = curr_x - prev_x
+            norm_scale = scale / simulator.config.physics.field_width
+            for agent_id, player in simulator.players.items():
+                rewards[agent_id] += float(delta * player.attack_direction * norm_scale)
 
         return rewards
 
@@ -84,29 +82,29 @@ class IdlePenaltyTerm(RewardTerm):
         return rewards
 
 
+class WallBouncePenaltyTerm(RewardTerm):
+    def compute(self, simulator) -> dict[str, float]:
+        rewards = {agent_id: 0.0 for agent_id in simulator.players}
+        penalty = simulator.config.rewards.wall_bounce_penalty
+        for event in simulator.events:
+            if event.type is EventType.BALL_WALL_BOUNCE:
+                touch_team = simulator.ball.last_touch_team_id
+                if touch_team is not None:
+                    for agent_id, player in simulator.players.items():
+                        if player.team_id == touch_team:
+                            rewards[agent_id] -= penalty
+        return rewards
+
+
+class TimePenaltyTerm(RewardTerm):
+    def compute(self, simulator) -> dict[str, float]:
+        penalty = simulator.config.rewards.time_penalty
+        return {agent_id: -penalty for agent_id in simulator.players}
+
+
 class ScenarioHookRewardTerm(RewardTerm):
     def compute(self, simulator) -> dict[str, float]:
         rewards = {agent_id: 0.0 for agent_id in simulator.players}
         for agent_id, value in simulator.extra_agent_rewards.items():
             rewards[agent_id] += value * simulator.config.rewards.scenario_bonus_scale
-        return rewards
-    
-class TimePenaltyTerm(RewardTerm):
-    def compute(self, simulator) -> dict[str, float]:
-        return {agent_id: -0.001 for agent_id in simulator.players}
-
-
-class WallBouncePenaltyTerm(RewardTerm):
-    """Penalise every ball bounce off a field boundary or moving obstacle.
-
-    Prevents the agent from farming ball-progress reward by repeatedly
-    kicking the ball into a corner wall.
-    """
-    def compute(self, simulator) -> dict[str, float]:
-        rewards = {agent_id: 0.0 for agent_id in simulator.players}
-        penalty = simulator.config.rewards.wall_bounce_penalty
-        for event in simulator.events:
-            if event.type in (EventType.BALL_WALL_BOUNCE, EventType.OUT_OF_BOUNDS):
-                for agent_id in simulator.players:
-                    rewards[agent_id] -= penalty
         return rewards
