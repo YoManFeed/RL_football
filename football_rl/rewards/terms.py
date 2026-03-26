@@ -37,24 +37,12 @@ class BallProgressRewardTerm(RewardTerm):
         prev_pos = np.array(simulator.prev_ball_position)
         curr_pos = np.array(simulator.ball.position)
 
-        # define goal center (you may need to adjust depending on your coordinate system)
-        goal_x = simulator.config.physics.field_width / 2.0
-        goal_y = 0.0  # assuming center of field in y
-
-        # If attack direction matters:
         for agent_id, player in simulator.players.items():
-            if player.attack_direction == -1:
-                goal_x = -goal_x  # flip goal for opposite team
-
-            goal_pos = np.array([goal_x, goal_y])
-
-            prev_dist = np.linalg.norm(prev_pos - goal_pos)
-            curr_dist = np.linalg.norm(curr_pos - goal_pos)
-
-            delta = prev_dist - curr_dist  # positive if closer to goal
-
-            scale = simulator.config.rewards.ball_progress_scale
-            rewards[agent_id] += float(delta * scale)
+            goal_pos = simulator.opponent_goal_center(player.team_id)
+            prev_dist = float(np.linalg.norm(prev_pos - goal_pos))
+            curr_dist = float(np.linalg.norm(curr_pos - goal_pos))
+            delta = prev_dist - curr_dist  # positive if ball moved closer to goal
+            rewards[agent_id] += delta * simulator.config.rewards.ball_progress_scale
 
         return rewards
 
@@ -106,3 +94,19 @@ class ScenarioHookRewardTerm(RewardTerm):
 class TimePenaltyTerm(RewardTerm):
     def compute(self, simulator) -> dict[str, float]:
         return {agent_id: -0.001 for agent_id in simulator.players}
+
+
+class WallBouncePenaltyTerm(RewardTerm):
+    """Penalise every ball bounce off a field boundary or moving obstacle.
+
+    Prevents the agent from farming ball-progress reward by repeatedly
+    kicking the ball into a corner wall.
+    """
+    def compute(self, simulator) -> dict[str, float]:
+        rewards = {agent_id: 0.0 for agent_id in simulator.players}
+        penalty = simulator.config.rewards.wall_bounce_penalty
+        for event in simulator.events:
+            if event.type in (EventType.BALL_WALL_BOUNCE, EventType.OUT_OF_BOUNDS):
+                for agent_id in simulator.players:
+                    rewards[agent_id] -= penalty
+        return rewards

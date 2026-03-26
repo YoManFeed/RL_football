@@ -66,6 +66,7 @@ class RewardConfig:
     interception_reward: float = 0.45
     touch_reward: float = 0.1  # increased from 0.05 for better learning signal
     idle_penalty: float = 0.004
+    wall_bounce_penalty: float = 0.05
     scenario_bonus_scale: float = 0.0
 
 
