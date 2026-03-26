@@ -320,7 +320,8 @@ class SoccerSimulator:
         if self.step_count >= self.max_episode_steps:
             self.truncated = True
 
-        rewards = self.reward_manager.compute(self)
+        result = self.reward_manager.compute(self)
+        rewards = result.total
         info = {
             "events": [event.type.value for event in self.events],
             "event_payloads": [event.data for event in self.events],
@@ -331,6 +332,7 @@ class SoccerSimulator:
             "step_count": self.step_count,
             "terminated": self.terminated,
             "truncated": self.truncated,
+            "reward_breakdown": result.breakdown,
         }
         return rewards, self.terminated, self.truncated, info
 
