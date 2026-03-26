@@ -16,16 +16,25 @@ from football_rl.rewards.terms import (
 
 
 @dataclass(slots=True)
+class RewardResult:
+    total: dict[str, float]
+    breakdown: dict[str, dict[str, float]]
+
+
+@dataclass(slots=True)
 class RewardManager:
     terms: list[RewardTerm] = field(default_factory=list)
 
-    def compute(self, simulator) -> dict[str, float]:
+    def compute(self, simulator) -> RewardResult:
         total = {agent_id: 0.0 for agent_id in simulator.players}
+        breakdown: dict[str, dict[str, float]] = {}
         for term in self.terms:
             partial = term.compute(simulator)
+            term_name = type(term).__name__
+            breakdown[term_name] = partial
             for agent_id, reward in partial.items():
                 total[agent_id] += float(reward)
-        return total
+        return RewardResult(total=total, breakdown=breakdown)
 
 
 def build_default_reward_manager() -> RewardManager:
@@ -36,8 +45,8 @@ def build_default_reward_manager() -> RewardManager:
             PassRewardTerm(),
             StealRewardTerm(),
             IdlePenaltyTerm(),
-            ScenarioHookRewardTerm(),
-            TimePenaltyTerm(),
             WallBouncePenaltyTerm(),
+            TimePenaltyTerm(),
+            ScenarioHookRewardTerm(),
         ]
     )
