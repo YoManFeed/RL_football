@@ -53,71 +53,24 @@ CAPTURE_AT = {
 def make_training_config():
     """Custom config with amplified dense rewards so PPO gets a useful signal."""
     cfg = make_default_config()
-    cfg.rewards.ball_progress_scale = 2.0   # default 0.04 → ×50
-    cfg.rewards.touch_reward = 0.5          # default 0.05 → ×10
+    cfg.rewards.ball_progress_scale = 2.0   # amplified progress signal
+    cfg.rewards.touch_reward = 0.5          # reward for gaining possession
+    cfg.rewards.ball_proximity_scale = 0.4  # stay-near-ball reward (no kick penalty)
+    cfg.rewards.kick_reward = 0.15          # reward each kick to encourage interaction
     cfg.ball.allow_dribble = False          # kick-only
-    # fix attack direction for stage-1: removes canonical/action mismatch (×3 speedup)
     cfg.randomization.randomize_attack_direction = False
     return cfg
-
-
-# ── ball-approach shaping wrapper ─────────────────────────────────────────────
-
-class BallApproachWrapper:
-    """Potential-based shaping: reward getting closer to the ball.
-
-    obs layout (flattened, no teammates/opponents):
-      [0:11]  self block
-      [11:17] ball block — [15:17] = normalize_position(ball-self + [60,40])
-        => actual_rel_x = obs[15] * 60,  actual_rel_y = obs[16] * 40
-    """
-
-    APPROACH_SCALE = 3.0   # reward per unit of progress toward ball (was 0.4)
-
-    def __init__(self, env):
-        self.env = env
-        self.observation_space = env.observation_space
-        self.action_space = env.action_space
-        self._prev_dist: float | None = None
-
-    @staticmethod
-    def _dist_to_ball(obs: np.ndarray) -> float:
-        rel_x = float(obs[15]) * 60.0
-        rel_y = float(obs[16]) * 40.0
-        return float((rel_x ** 2 + rel_y ** 2) ** 0.5)
-
-    def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
-        self._prev_dist = self._dist_to_ball(obs)
-        return obs, info
-
-    def step(self, action):
-        obs, reward, terminated, truncated, info = self.env.step(action)
-        curr_dist = self._dist_to_ball(obs)
-        if self._prev_dist is not None:
-            # positive when approaching, negative when moving away
-            shaping = self.APPROACH_SCALE * (self._prev_dist - curr_dist) / 120.0
-            reward += shaping
-        self._prev_dist = curr_dist if not (terminated or truncated) else None
-        return obs, reward, terminated, truncated, info
-
-    def render(self):
-        return self.env.render()
-
-    def close(self):
-        return self.env.close()
 
 
 # ── env factories ─────────────────────────────────────────────────────────────
 
 def make_train_env():
-    base = FootballGymEnv(
+    return FootballGymEnv(
         SCENARIO,
         config=make_training_config(),
         flatten_observation=True,
         canonical_observation=True,
     )
-    return BallApproachWrapper(base)
 
 
 def make_render_env():

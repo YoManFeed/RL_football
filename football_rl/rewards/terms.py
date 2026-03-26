@@ -110,3 +110,40 @@ class WallBouncePenaltyTerm(RewardTerm):
                 for agent_id in simulator.players:
                     rewards[agent_id] -= penalty
         return rewards
+
+
+class BallProximityRewardTerm(RewardTerm):
+    """Reward for staying close to the ball.
+
+    Unlike a potential-based approach (delta distance), this absolute
+    proximity term does NOT penalise kicking the ball away — it simply
+    gives a continuous incentive to chase the ball after each kick.
+    """
+    def compute(self, simulator) -> dict[str, float]:
+        rewards = {agent_id: 0.0 for agent_id in simulator.players}
+        scale = simulator.config.rewards.ball_proximity_scale
+        if scale == 0.0:
+            return rewards
+        fw = simulator.config.physics.field_width
+        fh = simulator.config.physics.field_height
+        max_dist = (fw ** 2 + fh ** 2) ** 0.5
+        for agent_id, player in simulator.players.items():
+            dist = float(np.linalg.norm(simulator.ball.position - player.position))
+            proximity = max(0.0, 1.0 - dist / max_dist)
+            rewards[agent_id] += proximity * scale
+        return rewards
+
+
+class KickRewardTerm(RewardTerm):
+    """Small reward for each kick, encouraging active ball interaction."""
+    def compute(self, simulator) -> dict[str, float]:
+        rewards = {agent_id: 0.0 for agent_id in simulator.players}
+        kick_r = simulator.config.rewards.kick_reward
+        if kick_r == 0.0:
+            return rewards
+        for event in simulator.events:
+            if event.type is EventType.KICK:
+                player_id = event.data.get("player_id")
+                if player_id in rewards:
+                    rewards[player_id] += kick_r
+        return rewards

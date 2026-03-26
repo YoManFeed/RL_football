@@ -293,9 +293,6 @@ class PPOAgent:
             "num_episodes": len(ep_returns),
         }
 
-        print("rewards sample:", self.buffer.rewards[:50])
-
-        
         return last_value, stats
 
     # ------------------------------------------------------------------

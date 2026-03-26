@@ -5,8 +5,10 @@ from dataclasses import dataclass, field
 from football_rl.rewards.base import RewardTerm
 from football_rl.rewards.terms import (
     BallProgressRewardTerm,
+    BallProximityRewardTerm,
     GoalRewardTerm,
     IdlePenaltyTerm,
+    KickRewardTerm,
     PassRewardTerm,
     ScenarioHookRewardTerm,
     StealRewardTerm,
@@ -33,6 +35,8 @@ def build_default_reward_manager() -> RewardManager:
         terms=[
             GoalRewardTerm(),
             BallProgressRewardTerm(),
+            BallProximityRewardTerm(),
+            KickRewardTerm(),
             PassRewardTerm(),
             StealRewardTerm(),
             IdlePenaltyTerm(),
